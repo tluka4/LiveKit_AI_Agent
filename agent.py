@@ -2,6 +2,8 @@ import logging
 import os
 
 from livekit.plugins.openai import llm
+from livekit.plugins.cartesia import tts
+
 
 from dotenv import load_dotenv
 load_dotenv('.env.local')
@@ -11,8 +13,8 @@ from livekit.agents import (
     JobProcess,
     WorkerOptions,
     cli,
-    llm,
     metrics,
+    llm as agents_llm
 )
 from livekit.agents.pipeline import VoicePipelineAgent
 from livekit.plugins import cartesia, openai, deepgram, silero, turn_detector, google, elevenlabs
@@ -33,7 +35,7 @@ async def entrypoint(ctx: JobContext):
 
     instructions = load_instructions()
 
-    initial_ctx = llm.ChatContext().append(
+    initial_ctx = agents_llm.ChatContext().append(
         role="system",
         text=instructions #now loads dynamically from corresponding prompt
     )
@@ -45,30 +47,16 @@ async def entrypoint(ctx: JobContext):
     participant = await ctx.wait_for_participant()
     logger.info(f"starting voice assistant for participant {participant.identity}")
 
-    voice_config = elevenlabs.Voice(
-        id="EXAVITQu4vr4xnSDxMaL",
-        name="Bella",
-        category="premade",
-        settings=elevenlabs.VoiceSettings(
-            stability=0.71,
-            similarity_boost=0.5,
-            style=0.0,
-            use_speaker_boost=True,
-        ),
+    cartesia_tts = tts.TTS(
+        model="sonic-turbo",
+        voice="c2ac25f9-ecc4-4f56-9095-651354df60c0",  # "Codey"
+        speed=0.4,
+        emotion=["curiosity:highest", "positivity:high"]
     )
 
-    elevenlabs_tts = elevenlabs.TTS(
-        voice=voice_config,
-        model="eleven_flash_v2_5",
-        api_key=os.getenv("ELEVEN_API_KEY"),
-        streaming_latency=3,
-        enable_ssml_parsing=False,
-        chunk_length_schedule=[80, 120, 200, 260],
-    )
 
     cerebras_llm = llm.LLM.with_cerebras(
-        model="llama3.1-8b", #adjust if needed
-        api_key=os.getenv("CEREBRAS_API_KEY"),
+        model="llama3.1-70b", #adjust if needed
         temperature=0.8,
     )
 
@@ -78,7 +66,7 @@ async def entrypoint(ctx: JobContext):
         vad=ctx.proc.userdata["vad"],
         stt=deepgram.STT(),
         llm=cerebras_llm,
-        tts=elevenlabs_tts,
+        tts=cartesia_tts,
         turn_detector=turn_detector.EOUModel(),
         # minimum delay for endpointing, used when turn detector believes the user is done with their turn
         min_endpointing_delay=0.5,
@@ -96,7 +84,8 @@ async def entrypoint(ctx: JobContext):
 
     agent.start(ctx.room, participant)
 
-    await agent.say("Hello, how may I assist with your New Jesery Law concerns today?", allow_interruptions=True)
+    await agent.say("How may I address your New Jersey Law concerns?", allow_interruptions=True)
+    #Welcome to XYZ real estate, how may i assist you?
 
 
 if __name__ == "__main__":
@@ -106,3 +95,4 @@ if __name__ == "__main__":
             prewarm_fnc=prewarm,
         ),
     )
+
